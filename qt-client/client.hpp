@@ -15,29 +15,19 @@ class Client : public QObject {
 public:
     Client() {
         socket = new QTcpSocket(this);
+        id = 0;
         connect(socket, &QTcpSocket::readyRead, this, &Client::receiveResponse);
         InitWindow(800,600,"Client");
         SetTargetFPS(60);
 
         if (!connectToHost("127.0.0.1")) {
-            // QMessageBox::critical(nullptr,"Error","Failed to connect to server");
-            QApplication::quit();
-        }
-
-        if (!sendRequest("id?")) {
-            // QMessageBox::critical(nullptr,"Error","Failed to send request(ID)");
-            QApplication::quit();
-        }
-        qDebug() << "Client ID: " << id;
-
-        if (!sendRequest("pos?")) {
-            // QMessageBox::critical(nullptr,"Error","Failed to send request(POS)");
+            qDebug() << "Failed to connect to host, " << socket->errorString();
             QApplication::quit();
         }
 
         QTimer* timer = new QTimer(this);
         connect(timer, &QTimer::timeout, this, &Client::gameLoop);
-        timer->start(16.667);
+        timer->start(15);
     }
 
     ~Client() {
@@ -61,16 +51,18 @@ public slots:
     void receiveResponse() {
         QByteArray msg = socket->readAll();
         std::string server_res = msg.toStdString();
-        if (STARTS_WITH(server_res, "id!")) {
-            id = std::stoi(server_res.substr(server_res.find('!',0)+1));
-        }
-        if (STARTS_WITH(server_res, "pos!")) {
-            auto vec_pos = server_res.find('!',0);
-            auto v = server_res.substr(vec_pos+1);
-            auto delim_pos = v.find(',',0);
-            float x = std::stof(server_res.substr(0, delim_pos));
-            float y = std::stof(server_res.substr(delim_pos+1));
-            position = Vector2 {x,y};
+        qDebug() << "Server response: " << QString::fromStdString(server_res);
+        if (STARTS_WITH(server_res, "id+pos!")) {
+            auto body = server_res.substr(7);
+            qDebug() << "Message body: " << QString::fromStdString(body);
+
+            auto delim_pos = body.find('|',0);
+            this->id = std::stoi(body.substr(0, delim_pos))-1;
+            auto v_str = body.substr(delim_pos+1);
+            auto v_delim_pos = v_str.find(',',0);
+
+            this->position.x = std::stof(v_str.substr(0,v_delim_pos));
+            this->position.y = std::stof(v_str.substr(v_delim_pos+1)); 
         }
     }
 
@@ -82,19 +74,6 @@ private:
     bool connectToHost(QString host) {
         socket->connectToHost(host, 8081);
         return socket->waitForConnected(); // wait connection;
-    }
-
-    bool sendRequest(QString msg) {
-        QByteArray barr = msg.toUtf8();
-        
-        if (socket->state() == QTcpSocket::ConnectedState) {
-            qDebug() << "Sending message:" << msg;
-            socket->write(barr);
-            socket->flush();
-            return socket->waitForBytesWritten();
-        }
-        else 
-            return false;
     }
 
     void movePlayer() {
